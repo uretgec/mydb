@@ -13,6 +13,10 @@ NOTE:
 
 > You can use both db together without any problems.
 
+## Examples
+
+Example use go to mydb-server repository -> (https://github.com/uretgec/mydb-server)
+
 ## Methods
 ```
 CloseStore()
