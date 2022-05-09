@@ -50,6 +50,6 @@ go get  github.com/uretgec/mydb
 
 ## Links
 
-Bbolt (go.etcd.io/bbolt)
+Bbolt (https://github.com/etcd-io/bbolt)
 
-Sniper (github.com/recoilme/sniper)
+Sniper (https://github.com/recoilme/sniper)
