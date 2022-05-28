@@ -92,7 +92,7 @@ func (s *Store) Set(bucketName []byte, k []byte, v []byte) ([]byte, error) {
 	}
 
 	err := s.db.Set([]byte(key), v, 0)
-	if err == nil {
+	if err == nil && storage.Contains(s.indexList, bucketName) {
 		err = s.dbIndex.Update(func(t *bolt.Tx) error {
 			b := t.Bucket(bucketName)
 
