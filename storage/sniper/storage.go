@@ -114,6 +114,9 @@ func (s *Store) KeyExist(bucketName []byte, k []byte) (bool, error) {
 	}
 
 	v, err := s.db.Get([]byte(key))
+	if err == sniper.ErrNotFound {
+		return false, nil
+	}
 
 	return (len(v) > 0), err
 }
@@ -186,7 +189,7 @@ func (s *Store) Delete(bucketName []byte, k []byte) error {
 	}
 
 	_, err := s.db.Delete([]byte(key))
-	if err == nil {
+	if err == nil && storage.Contains(s.indexList, bucketName) {
 		err = s.dbIndex.Update(func(t *bolt.Tx) error {
 			b := t.Bucket(bucketName)
 			return b.Delete(k)
