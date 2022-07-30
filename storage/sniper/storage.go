@@ -1,4 +1,4 @@
-package sniperstore
+package sniperstorage
 
 import (
 	"bytes"
@@ -39,10 +39,10 @@ func NewStore(bucketList, indexList []string, path string, dbName string, readOn
 	s.db = db
 
 	// IndexDB
-	// Create dir if necessary
+	// Create dir if not exits
 	_ = storage.CreateDir(path)
 
-	// Open DB
+	// Open BoltDB
 	dbIndex, err := bolt.Open(fmt.Sprintf("%s%s.db", path, "indexstore"), 0600, &bolt.Options{ReadOnly: readOnly})
 	if err != nil {
 		return s, err
@@ -73,6 +73,19 @@ func NewStore(bucketList, indexList []string, path string, dbName string, readOn
 	return s, nil
 }
 
+func (s *Store) CloseStore() error {
+	err := s.db.Close()
+	if err == nil {
+		err = s.dbIndex.Close()
+	}
+
+	return err
+}
+
+func (s *Store) SyncStore() {
+	s.dbIndex.Sync()
+}
+
 func (s *Store) Set(bucketName []byte, k []byte, v []byte) ([]byte, error) {
 	if s.readOnly {
 		return nil, errors.New("readonly mod active")
@@ -101,28 +114,6 @@ func (s *Store) Set(bucketName []byte, k []byte, v []byte) ([]byte, error) {
 	}
 
 	return k, err
-}
-
-func (s *Store) KeyExist(bucketName []byte, k []byte) (bool, error) {
-	if len(bucketName) > 0 && !storage.Contains(s.allBuckets, bucketName) {
-		return false, errors.New("unknown bucket name")
-	}
-
-	key := string(k)
-	if len(bucketName) > 0 {
-		key = string(bucketName) + key
-	}
-
-	v, err := s.db.Get([]byte(key))
-	if err == sniper.ErrNotFound {
-		return false, nil
-	}
-
-	return (len(v) > 0), err
-}
-
-func (s *Store) ValueExist(bucketName []byte, v []byte) (bool, error) {
-	return false, errors.New("not implemented")
 }
 
 func (s *Store) Get(bucketName []byte, k []byte) ([]byte, error) {
@@ -168,35 +159,6 @@ func (s *Store) MGet(bucketName []byte, keys ...[]byte) (list map[string]interfa
 	}
 
 	return items, nil
-}
-
-func (s *Store) Delete(bucketName []byte, k []byte) error {
-	if s.readOnly {
-		return errors.New("readonly mod active")
-	}
-
-	if len(bucketName) > 0 && !storage.Contains(s.allBuckets, bucketName) {
-		return errors.New("unknown bucket name")
-	}
-
-	if len(k) == 0 {
-		return errors.New("key not found")
-	}
-
-	key := string(k)
-	if len(bucketName) > 0 {
-		key = string(bucketName) + key
-	}
-
-	_, err := s.db.Delete([]byte(key))
-	if err == nil && storage.Contains(s.indexList, bucketName) {
-		err = s.dbIndex.Update(func(t *bolt.Tx) error {
-			b := t.Bucket(bucketName)
-			return b.Delete(k)
-		})
-	}
-
-	return err
 }
 
 /*
@@ -335,20 +297,83 @@ func (s *Store) PrevList(bucketName []byte, k []byte, perpage int) (list []strin
 	return items, nil
 }
 
-func (s *Store) Close() error {
-	err := s.db.Close()
-	if err == nil {
-		err = s.dbIndex.Close()
+func (s *Store) KeyExist(bucketName []byte, k []byte) (bool, error) {
+	if len(bucketName) > 0 && !storage.Contains(s.allBuckets, bucketName) {
+		return false, errors.New("unknown bucket name")
+	}
+
+	key := string(k)
+	if len(bucketName) > 0 {
+		key = string(bucketName) + key
+	}
+
+	v, err := s.db.Get([]byte(key))
+	if err == sniper.ErrNotFound {
+		return false, nil
+	}
+
+	return (len(v) > 0), err
+}
+
+func (s *Store) ValueExist(bucketName []byte, v []byte) (bool, error) {
+	return false, errors.New("not implemented")
+}
+
+func (s *Store) Delete(bucketName []byte, k []byte) error {
+	if s.readOnly {
+		return errors.New("readonly mod active")
+	}
+
+	if len(bucketName) > 0 && !storage.Contains(s.allBuckets, bucketName) {
+		return errors.New("unknown bucket name")
+	}
+
+	if len(k) == 0 {
+		return errors.New("key not found")
+	}
+
+	key := string(k)
+	if len(bucketName) > 0 {
+		key = string(bucketName) + key
+	}
+
+	_, err := s.db.Delete([]byte(key))
+	if err == nil && storage.Contains(s.indexList, bucketName) {
+		err = s.dbIndex.Update(func(t *bolt.Tx) error {
+			b := t.Bucket(bucketName)
+			return b.Delete(k)
+		})
 	}
 
 	return err
 }
 
-func (s *Store) Sync() {
-	s.dbIndex.Sync()
+func (s *Store) HasBucket(bucketName []byte) bool {
+	return len(bucketName) > 0 && storage.Contains(s.allBuckets, bucketName)
 }
 
-func (s *Store) BucketList() (buckets []string, err error) {
+func (s *Store) StatsBucket(bucketName []byte) int {
+	if len(bucketName) > 0 && !storage.Contains(s.allBuckets, bucketName) {
+		return 0
+	}
+
+	var stats int
+	err := s.dbIndex.View(func(t *bolt.Tx) error {
+		b := t.Bucket(bucketName)
+
+		stats = b.Stats().KeyN // total count key/value
+
+		return nil
+	})
+
+	if err != nil {
+		return 0
+	}
+
+	return stats
+}
+
+func (s *Store) ListBucket() (buckets []string, err error) {
 	val, err := s.db.Get([]byte("[buckets]"))
 	if err != nil {
 		return nil, err
@@ -385,31 +410,6 @@ func (s *Store) DeleteBucket(bucketName []byte) error {
 	}
 
 	return errors.New("not implemented")
-}
-
-func (s *Store) HasBucket(bucketName []byte) bool {
-	return len(bucketName) > 0 && storage.Contains(s.allBuckets, bucketName)
-}
-
-func (s *Store) BucketStats(bucketName []byte) int {
-	if len(bucketName) > 0 && !storage.Contains(s.allBuckets, bucketName) {
-		return 0
-	}
-
-	var stats int
-	err := s.dbIndex.View(func(t *bolt.Tx) error {
-		b := t.Bucket(bucketName)
-
-		stats = b.Stats().KeyN // total count key/value
-
-		return nil
-	})
-
-	if err != nil {
-		return 0
-	}
-
-	return stats
 }
 
 func (s *Store) Backup(path, filename string) error {

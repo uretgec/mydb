@@ -1,4 +1,4 @@
-package boltdbstore
+package boltdbstorage
 
 import (
 	"bytes"
@@ -27,7 +27,7 @@ func NewStore(bucketList, indexList []string, path string, dbName string, readOn
 	s.indexList = indexList
 	s.allBuckets = append(bucketList, indexList...)
 
-	// Create dir if necessary
+	// Create dir if not exist
 	_ = storage.CreateDir(path)
 
 	// Open DB
@@ -66,6 +66,14 @@ func NewStore(bucketList, indexList []string, path string, dbName string, readOn
 	return s, nil
 }
 
+func (s *Store) CloseStore() error {
+	return s.db.Close()
+}
+
+func (s *Store) SyncStore() {
+	s.db.Sync()
+}
+
 func (s *Store) Set(bucketName []byte, k []byte, v []byte) ([]byte, error) {
 	if s.readOnly {
 		return nil, errors.New("readonly mod active")
@@ -95,49 +103,6 @@ func (s *Store) Set(bucketName []byte, k []byte, v []byte) ([]byte, error) {
 	}
 
 	return k, err
-}
-
-func (s *Store) KeyExist(bucketName []byte, k []byte) (bool, error) {
-	if !storage.Contains(s.allBuckets, bucketName) {
-		return false, errors.New("unknown bucket name")
-	}
-
-	var exists bool
-	err := s.db.View(func(t *bolt.Tx) error {
-		b := t.Bucket(bucketName)
-		rxData := b.Get(k)
-		if rxData != nil {
-			exists = true
-		}
-
-		return nil
-	})
-
-	return exists, err
-}
-
-func (s *Store) ValueExist(bucketName []byte, v []byte) (bool, error) {
-	if !storage.Contains(s.allBuckets, bucketName) {
-		return false, errors.New("unknown bucket name")
-	}
-
-	var exists bool
-	err := s.db.View(func(t *bolt.Tx) error {
-		b := t.Bucket(bucketName)
-		c := b.Cursor()
-
-		for key, value := c.First(); key != nil; key, value = c.Next() {
-			check := bytes.Compare(value, v)
-			if check == 0 {
-				exists = true
-				break
-			}
-		}
-
-		return nil
-	})
-
-	return exists, err
 }
 
 func (s *Store) Get(bucketName []byte, k []byte) ([]byte, error) {
@@ -172,9 +137,7 @@ func (s *Store) MGet(bucketName []byte, keys ...[]byte) (list map[string]interfa
 		for index, key := range keys {
 			rxData := b.Get(key)
 
-			// NOTE: index eklenmesinin nedeni sort mekanizmasını bozuyordu
-			index := strconv.Itoa(index)
-			items[string(index)+":"+string(key)] = string(rxData)
+			items[fmt.Sprintf("%d:%s", index, key)] = string(rxData)
 		}
 
 		return nil
@@ -185,25 +148,6 @@ func (s *Store) MGet(bucketName []byte, keys ...[]byte) (list map[string]interfa
 	}
 
 	return items, nil
-}
-
-func (s *Store) Delete(bucketName []byte, k []byte) error {
-	if s.readOnly {
-		return errors.New("readonly mod active")
-	}
-
-	if !storage.Contains(s.allBuckets, bucketName) {
-		return errors.New("unknown bucket name")
-	}
-
-	if len(k) == 0 {
-		return errors.New("key not found")
-	}
-
-	return s.db.Update(func(t *bolt.Tx) error {
-		b := t.Bucket(bucketName)
-		return b.Delete(k)
-	})
 }
 
 /*
@@ -357,20 +301,94 @@ func (s *Store) PrevList(bucketName []byte, k []byte, perpage int) (list []strin
 	return items, nil
 }
 
-func (s *Store) Close() error {
-	return s.db.Close()
+func (s *Store) KeyExist(bucketName []byte, k []byte) (bool, error) {
+	if !storage.Contains(s.allBuckets, bucketName) {
+		return false, errors.New("unknown bucket name")
+	}
+
+	var exists bool
+	err := s.db.View(func(t *bolt.Tx) error {
+		b := t.Bucket(bucketName)
+		rxData := b.Get(k)
+		if rxData != nil {
+			exists = true
+		}
+
+		return nil
+	})
+
+	return exists, err
 }
 
-// Boltdb Stats
-func (s *Store) Stats() bolt.Stats {
-	return s.db.Stats()
+func (s *Store) ValueExist(bucketName []byte, v []byte) (bool, error) {
+	if !storage.Contains(s.allBuckets, bucketName) {
+		return false, errors.New("unknown bucket name")
+	}
+
+	var exists bool
+	err := s.db.View(func(t *bolt.Tx) error {
+		b := t.Bucket(bucketName)
+		c := b.Cursor()
+
+		for key, value := c.First(); key != nil; key, value = c.Next() {
+			check := bytes.Compare(value, v)
+			if check == 0 {
+				exists = true
+				break
+			}
+		}
+
+		return nil
+	})
+
+	return exists, err
 }
 
-func (s *Store) Sync() {
-	s.db.Sync()
+func (s *Store) Delete(bucketName []byte, k []byte) error {
+	if s.readOnly {
+		return errors.New("readonly mod active")
+	}
+
+	if !storage.Contains(s.allBuckets, bucketName) {
+		return errors.New("unknown bucket name")
+	}
+
+	if len(k) == 0 {
+		return errors.New("key not found")
+	}
+
+	return s.db.Update(func(t *bolt.Tx) error {
+		b := t.Bucket(bucketName)
+		return b.Delete(k)
+	})
 }
 
-func (s *Store) BucketList() (buckets []string, err error) {
+func (s *Store) HasBucket(bucketName []byte) bool {
+	return storage.Contains(s.allBuckets, bucketName)
+}
+
+func (s *Store) StatsBucket(bucketName []byte) int {
+	if !storage.Contains(s.allBuckets, bucketName) {
+		return 0
+	}
+
+	var stats int
+	err := s.db.View(func(t *bolt.Tx) error {
+		b := t.Bucket(bucketName)
+
+		stats = b.Stats().KeyN // total count key/value
+
+		return nil
+	})
+
+	if err != nil {
+		return 0
+	}
+
+	return stats
+}
+
+func (s *Store) ListBucket() (buckets []string, err error) {
 	bucketList := []string{}
 
 	err = s.db.View(func(t *bolt.Tx) error {
@@ -402,31 +420,6 @@ func (s *Store) DeleteBucket(bucketName []byte) error {
 	return s.db.Update(func(t *bolt.Tx) error {
 		return t.DeleteBucket(bucketName)
 	})
-}
-
-func (s *Store) HasBucket(bucketName []byte) bool {
-	return storage.Contains(s.allBuckets, bucketName)
-}
-
-func (s *Store) BucketStats(bucketName []byte) int {
-	if !storage.Contains(s.allBuckets, bucketName) {
-		return 0
-	}
-
-	var stats int
-	err := s.db.View(func(t *bolt.Tx) error {
-		b := t.Bucket(bucketName)
-
-		stats = b.Stats().KeyN // total count key/value
-
-		return nil
-	})
-
-	if err != nil {
-		return 0
-	}
-
-	return stats
 }
 
 func (s *Store) Backup(path, filename string) error {
