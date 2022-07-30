@@ -19,23 +19,27 @@ Example use go to mydb-server repository -> (https://github.com/uretgec/mydb-ser
 
 ## Methods
 ```
-CloseStore()
-SyncStore() // For only bbolt
-HasBucket(bucketName []byte) bool
+	NewStore(bucketList, indexList []string, path string, dbName string, readOnly bool)
+	CloseStore()
+	SyncStore()
 
-Set(bucketName []byte, k []byte, data []byte) ([]byte, error)
-Get(bucketName []byte, k []byte) ([]byte, error)
-MGet(bucketName []byte, keys ...[]byte) (interface{}, error)
-List(bucketName []byte, cursor []byte, perpage int) ([]string, error)
-PrevList(bucketName []byte, cursor []byte, perpage int) ([]string, error)
+	Set(bucketName []byte, k []byte, data []byte) ([]byte, error)
+	Get(bucketName []byte, k []byte) ([]byte, error)
+	MGet(bucketName []byte, keys ...[]byte) (interface{}, error)
+	List(bucketName []byte, cursor []byte, perpage int) ([]string, error)
+	PrevList(bucketName []byte, cursor []byte, perpage int) ([]string, error)
+	Delete(bucketName []byte, k []byte) error
 
-Exist(bucketName []byte, k []byte) (bool, error)
-ValueExist(bucketName []byte, v []byte) (bool, error) // For only bbolt/bbolt-sniper index
+	KeyExist(bucketName []byte, k []byte) (bool, error)
+	ValueExist(bucketName []byte, v []byte) (bool, error)
 
-Del(bucketName []byte, k []byte) error
-BStats(bucketName []byte) int
-Backup(path, filename string) error
-Restore(path, filename string) error // For only sniper - bbolt no need
+	HasBucket(bucketName []byte) bool
+	StatsBucket(bucketName []byte) int
+	ListBucket(bucketName []byte) int
+	DeleteBucket(bucketName []byte) int
+
+	Backup(path, filename string) error
+	Restore(path, filename string) error
 ```
 
 ## Install
@@ -45,7 +49,6 @@ go get  github.com/uretgec/mydb
 ```
 
 ## TODO
-- Add test files
 - Add new examples
 
 ## Links
