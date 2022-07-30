@@ -18,7 +18,7 @@ type Storage interface {
 	HasBucket(bucketName []byte) bool
 	StatsBucket(bucketName []byte) int
 	ListBucket(bucketName []byte) int
-	DeleteBucket(bucketName []byte) int
+	DeleteBucket(bucketName []byte) error
 
 	Backup(path, filename string) error
 	Restore(path, filename string) error
