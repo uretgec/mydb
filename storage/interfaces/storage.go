@@ -1,7 +1,6 @@
 package interfaces
 
 type Storage interface {
-	NewStore(bucketList, indexList []string, path string, dbName string, readOnly bool)
 	CloseStore()
 	SyncStore()
 
